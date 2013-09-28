@@ -30,6 +30,7 @@ type certificationRequestInfo struct {
 	Attributes    asn1.RawValue
 }
 
+// CertificateSigningRequest represents a PKCS#10 CSR.
 type CertificateSigningRequest struct {
 	Raw                         []byte
 	RawCertificationRequestInfo []byte
@@ -46,6 +47,8 @@ type CertificateSigningRequest struct {
 	Subject pkix.Name
 }
 
+// ParseCertificateSigningRequest parses a certificate signing request from the
+// given ASN.1 DER data.
 func ParseCertificateSigningRequest(asn1Data []byte) (*CertificateSigningRequest, error) {
 	var csr certificateSigningRequest
 	rest, err := asn1.Unmarshal(asn1Data, &csr)
@@ -59,6 +62,8 @@ func ParseCertificateSigningRequest(asn1Data []byte) (*CertificateSigningRequest
 	return parseCertificateSigningRequest(&csr)
 }
 
+// CheckSignature verifies that the signature on c is a valid signature using
+// the public key in c.
 func (c *CertificateSigningRequest) CheckSignature() (err error) {
 	var hashType crypto.Hash
 
@@ -131,7 +136,7 @@ func parseCertificateSigningRequest(in *certificateSigningRequest) (*Certificate
 }
 
 // CreateCertificateSigningRequest creates a new certificate signing request
-// based on a template. The following members of template are used: a, b, c.
+// based on a template. The following members of template are used: Subject.
 //
 // The certificate signing request is signed with the parameter priv which is
 // the private key of the requester. The public part of the priv key is
@@ -139,7 +144,8 @@ func parseCertificateSigningRequest(in *certificateSigningRequest) (*Certificate
 //
 // The returned slice is the certificate signing request in DER encoding.
 //
-// The only supported key type are RSA and ECDSA (*rsa.PrivateKey or *ecdsa.PublicKey for priv)
+// The only supported key type are RSA and ECDSA (*rsa.PrivateKey or
+// *ecdsa.PrivateKey for priv)
 func CreateCertificateSigningRequest(rand io.Reader, template *CertificateSigningRequest, priv interface{}) (csr []byte, err error) {
 	var publicKeyBytes []byte
 	var publicKeyAlgorithm pkix.AlgorithmIdentifier

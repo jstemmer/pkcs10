@@ -1,4 +1,4 @@
-// All contents of this file are taken from the official Go crypto/x509
+// All contents of the x509.go file are taken from the official Go crypto/x509
 // package.
 //
 // Copyright 2009 The Go Authors. All rights reserved.
