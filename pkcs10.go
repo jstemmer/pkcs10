@@ -1,13 +1,18 @@
+// Package pkcs10 parses and creates PKCS#10 certificate signing requests, as
+// specified in RFC 2986.
 package pkcs10
 
 import (
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"errors"
+	"io"
+	"math/big"
 )
 
 type certificateSigningRequest struct {
@@ -123,4 +128,125 @@ func parseCertificateSigningRequest(in *certificateSigningRequest) (*Certificate
 	out.Subject.FillFromRDNSequence(&subject)
 
 	return out, nil
+}
+
+// CreateCertificateSigningRequest creates a new certificate signing request
+// based on a template. The following members of template are used: a, b, c.
+//
+// The certificate signing request is signed with the parameter priv which is
+// the private key of the requester. The public part of the priv key is
+// included in the certification request information
+//
+// The returned slice is the certificate signing request in DER encoding.
+//
+// The only supported key type are RSA and ECDSA (*rsa.PrivateKey or *ecdsa.PublicKey for priv)
+func CreateCertificateSigningRequest(rand io.Reader, template *CertificateSigningRequest, priv interface{}) (csr []byte, err error) {
+	var publicKeyBytes []byte
+	var publicKeyAlgorithm pkix.AlgorithmIdentifier
+	var signatureAlgorithm pkix.AlgorithmIdentifier
+	var hashFunc crypto.Hash
+
+	switch priv := priv.(type) {
+	case *rsa.PrivateKey:
+		signatureAlgorithm.Algorithm = oidSignatureSHA1WithRSA
+		hashFunc = crypto.SHA1
+
+		publicKeyBytes, err = asn1.Marshal(rsaPublicKey{
+			N: priv.PublicKey.N,
+			E: priv.PublicKey.E,
+		})
+		publicKeyAlgorithm.Algorithm = oidPublicKeyRSA
+	case *ecdsa.PrivateKey:
+		switch priv.Curve {
+		case elliptic.P224(), elliptic.P256():
+			hashFunc = crypto.SHA256
+			signatureAlgorithm.Algorithm = oidSignatureECDSAWithSHA256
+		case elliptic.P384():
+			hashFunc = crypto.SHA384
+			signatureAlgorithm.Algorithm = oidSignatureECDSAWithSHA384
+		case elliptic.P521():
+			hashFunc = crypto.SHA512
+			signatureAlgorithm.Algorithm = oidSignatureECDSAWithSHA512
+		default:
+			return nil, errors.New("x509: unknown elliptic curve")
+		}
+
+		oid, ok := oidFromNamedCurve(priv.PublicKey.Curve)
+		if !ok {
+			return nil, errors.New("x509: unknown elliptic curve")
+		}
+		publicKeyAlgorithm.Algorithm = oidPublicKeyECDSA
+		var paramBytes []byte
+		paramBytes, err = asn1.Marshal(oid)
+		if err != nil {
+			return
+		}
+		publicKeyAlgorithm.Parameters.FullBytes = paramBytes
+		publicKeyBytes = elliptic.Marshal(priv.PublicKey.Curve, priv.PublicKey.X, priv.PublicKey.Y)
+	default:
+		return nil, errors.New("x509: only RSA private keys supported")
+	}
+
+	if err != nil {
+		return
+	}
+
+	var asn1Subject []byte
+	if len(template.RawSubject) > 0 {
+		asn1Subject = template.RawSubject
+	} else {
+		asn1Subject, err = asn1.Marshal(template.Subject.ToRDNSequence())
+	}
+
+	if err != nil {
+		return
+	}
+
+	encodedPublicKey := asn1.BitString{BitLength: len(publicKeyBytes) * 8, Bytes: publicKeyBytes}
+	c := certificationRequestInfo{
+		Version:       0,
+		Subject:       asn1.RawValue{FullBytes: asn1Subject},
+		SubjectPKInfo: publicKeyInfo{nil, publicKeyAlgorithm, encodedPublicKey},
+	}
+
+	csrInfoContents, err := asn1.Marshal(c)
+	if err != nil {
+		return
+	}
+
+	c.Raw = csrInfoContents
+
+	if !hashFunc.Available() {
+		return nil, x509.ErrUnsupportedAlgorithm
+	}
+	h := hashFunc.New()
+	h.Write(csrInfoContents)
+	digest := h.Sum(nil)
+
+	var signature []byte
+
+	switch priv := priv.(type) {
+	case *rsa.PrivateKey:
+		signature, err = rsa.SignPKCS1v15(rand, priv, hashFunc, digest)
+	case *ecdsa.PrivateKey:
+		var r, s *big.Int
+		if r, s, err = ecdsa.Sign(rand, priv, digest); err == nil {
+			signature, err = asn1.Marshal(ecdsaSignature{r, s})
+		}
+	default:
+		panic("internal error")
+	}
+
+	if err != nil {
+		return
+	}
+
+	csr, err = asn1.Marshal(certificateSigningRequest{
+		nil,
+		c,
+		signatureAlgorithm,
+		asn1.BitString{Bytes: signature, BitLength: len(signature) * 8},
+	})
+
+	return
 }
