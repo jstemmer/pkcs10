@@ -3,6 +3,8 @@
 Package pkcs10 parses and creates PKCS#10 certificate signing requests, as
 specified in RFC 2986.
 
+[![Build Status](https://travis-ci.org/jstemmer/pkcs10.png?branch=master)](https://travis-ci.org/jstemmer/pkcs10)
+
 ## License
 
 See LICENSE.
