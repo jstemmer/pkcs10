@@ -14,6 +14,10 @@ func TestParseCertificateSigningRequest(t *testing.T) {
 		t.Fatalf("Error parsing csr: %s", err)
 	}
 
+	if err = csr.CheckSignature(); err != nil {
+		t.Fatalf("Signature check failed: %s", err)
+	}
+
 	if csr.Version != 0 {
 		t.Errorf("Invalid CSR version. Got %d, want %d", csr.Version, 0)
 	}

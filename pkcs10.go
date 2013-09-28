@@ -1,9 +1,13 @@
 package pkcs10
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"errors"
 )
 
 type certificateSigningRequest struct {
@@ -48,6 +52,49 @@ func ParseCertificateSigningRequest(asn1Data []byte) (*CertificateSigningRequest
 	}
 
 	return parseCertificateSigningRequest(&csr)
+}
+
+func (c *CertificateSigningRequest) CheckSignature() (err error) {
+	var hashType crypto.Hash
+
+	switch c.SignatureAlgorithm {
+	case x509.SHA1WithRSA, x509.ECDSAWithSHA1:
+		hashType = crypto.SHA1
+	case x509.SHA256WithRSA, x509.ECDSAWithSHA256:
+		hashType = crypto.SHA256
+	case x509.SHA384WithRSA, x509.ECDSAWithSHA384:
+		hashType = crypto.SHA384
+	case x509.SHA512WithRSA, x509.ECDSAWithSHA512:
+		hashType = crypto.SHA512
+	default:
+		return x509.ErrUnsupportedAlgorithm
+	}
+
+	if !hashType.Available() {
+		return x509.ErrUnsupportedAlgorithm
+	}
+	h := hashType.New()
+
+	h.Write(c.RawCertificationRequestInfo)
+	digest := h.Sum(nil)
+
+	switch pub := c.PublicKey.(type) {
+	case *rsa.PublicKey:
+		return rsa.VerifyPKCS1v15(pub, hashType, digest, c.Signature)
+	case *ecdsa.PublicKey:
+		ecdsaSig := new(ecdsaSignature)
+		if _, err := asn1.Unmarshal(c.Signature, ecdsaSig); err != nil {
+			return err
+		}
+		if ecdsaSig.R.Sign() <= 0 || ecdsaSig.S.Sign() <= 0 {
+			return errors.New("crypto/x509: ECDSA signature contained zero or negative values")
+		}
+		if !ecdsa.Verify(pub, digest, ecdsaSig.R, ecdsaSig.S) {
+			return errors.New("crypto/x509: ECDSA verification failure")
+		}
+		return
+	}
+	return x509.ErrUnsupportedAlgorithm
 }
 
 func parseCertificateSigningRequest(in *certificateSigningRequest) (*CertificateSigningRequest, error) {
