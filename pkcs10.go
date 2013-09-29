@@ -27,7 +27,12 @@ type certificationRequestInfo struct {
 	Version       int
 	Subject       asn1.RawValue
 	SubjectPKInfo publicKeyInfo
-	Attributes    asn1.RawValue
+	Attributes    []Attribute `asn1:"tag:0"`
+}
+
+type Attribute struct {
+	Type   asn1.ObjectIdentifier
+	Values asn1.RawValue `asn1:"set"`
 }
 
 // CertificateSigningRequest represents a PKCS#10 CSR.
