@@ -1,3 +1,9 @@
+# No longer maintained
+
+This project is no longer being maintained. Go 1.3 added support for PKCS#10
+certificate signing requests to the [crypto/x509](https://golang.org/pkg/crypto/x509/)
+package.
+
 # pkcs10
 
 Package pkcs10 parses and creates PKCS#10 certificate signing requests, as
